@@ -1,0 +1,610 @@
+{
+    "Version": "2020-12-01",
+    "Metadata": {},
+    "Parameters": [
+        {
+            "Name": "AccuracyThreshold",
+            "Type": "Float",
+            "DefaultValue": 0.5
+        }
+    ],
+    "PipelineExperimentConfig": {
+        "ExperimentName": {
+            "Get": "Execution.PipelineName"
+        },
+        "TrialName": {
+            "Get": "Execution.PipelineExecutionId"
+        }
+    },
+    "Steps": [
+        {
+            "Name": "PreprocessData",
+            "Type": "Processing",
+            "Arguments": {
+                "ProcessingResources": {
+                    "ClusterConfig": {
+                        "InstanceType": "ml.t3.medium",
+                        "InstanceCount": 1,
+                        "VolumeSizeInGB": 30
+                    }
+                },
+                "AppSpecification": {
+                    "ImageUri": "662702820516.dkr.ecr.eu-north-1.amazonaws.com/sagemaker-scikit-learn:1.2-1-cpu-py3",
+                    "ContainerEntrypoint": [
+                        "python3",
+                        "/opt/ml/processing/input/code/preprocessing.py"
+                    ]
+                },
+                "RoleArn": "arn:aws:iam::861976376325:role/sagemaker-ml-execution-role-1-tf",
+                "ProcessingInputs": [
+                    {
+                        "InputName": "input-1",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/raw-data",
+                            "LocalPath": "/opt/ml/processing/input",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    },
+                    {
+                        "InputName": "code",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/scripts/preprocessing.py",
+                            "LocalPath": "/opt/ml/processing/input/code",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    }
+                ],
+                "ProcessingOutputConfig": {
+                    "Outputs": [
+                        {
+                            "OutputName": "train",
+                            "AppManaged": false,
+                            "S3Output": {
+                                "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/preprocessed/train",
+                                "LocalPath": "/opt/ml/processing/train",
+                                "S3UploadMode": "EndOfJob"
+                            }
+                        },
+                        {
+                            "OutputName": "test",
+                            "AppManaged": false,
+                            "S3Output": {
+                                "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/preprocessed/test",
+                                "LocalPath": "/opt/ml/processing/test",
+                                "S3UploadMode": "EndOfJob"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "Name": "CreateBaseline",
+            "Type": "Processing",
+            "Arguments": {
+                "ProcessingResources": {
+                    "ClusterConfig": {
+                        "InstanceType": "ml.m5.large",
+                        "InstanceCount": 1,
+                        "VolumeSizeInGB": 30
+                    }
+                },
+                "AppSpecification": {
+                    "ImageUri": "662702820516.dkr.ecr.eu-north-1.amazonaws.com/sagemaker-xgboost:1.7-1",
+                    "ContainerEntrypoint": [
+                        "python3",
+                        "/opt/ml/processing/input/code/generate_baseline.py"
+                    ]
+                },
+                "RoleArn": "arn:aws:iam::861976376325:role/sagemaker-ml-execution-role-1-tf",
+                "ProcessingInputs": [
+                    {
+                        "InputName": "input-1",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/preprocessed/train",
+                            "LocalPath": "/opt/ml/processing/input",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    },
+                    {
+                        "InputName": "code",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/scripts/generate_baseline.py",
+                            "LocalPath": "/opt/ml/processing/input/code",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    }
+                ],
+                "ProcessingOutputConfig": {
+                    "Outputs": [
+                        {
+                            "OutputName": "output-1",
+                            "AppManaged": false,
+                            "S3Output": {
+                                "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/monitoring/baseline/",
+                                "LocalPath": "/opt/ml/processing/output",
+                                "S3UploadMode": "EndOfJob"
+                            }
+                        }
+                    ]
+                }
+            },
+            "DependsOn": [
+                "PreprocessData",
+                "HyperparameterTuning"
+            ]
+        },
+        {
+            "Name": "HyperparameterTuning",
+            "Type": "Tuning",
+            "Arguments": {
+                "HyperParameterTuningJobConfig": {
+                    "Strategy": "Bayesian",
+                    "ResourceLimits": {
+                        "MaxNumberOfTrainingJobs": 1,
+                        "MaxParallelTrainingJobs": 1
+                    },
+                    "TrainingJobEarlyStoppingType": "Auto",
+                    "HyperParameterTuningJobObjective": {
+                        "Type": "Minimize",
+                        "MetricName": "validation:merror"
+                    },
+                    "ParameterRanges": {
+                        "ContinuousParameterRanges": [
+                            {
+                                "Name": "eta",
+                                "MinValue": "0.01",
+                                "MaxValue": "0.3",
+                                "ScalingType": "Auto"
+                            },
+                            {
+                                "Name": "subsample",
+                                "MinValue": "0.5",
+                                "MaxValue": "1",
+                                "ScalingType": "Auto"
+                            },
+                            {
+                                "Name": "gamma",
+                                "MinValue": "0",
+                                "MaxValue": "5",
+                                "ScalingType": "Auto"
+                            },
+                            {
+                                "Name": "alpha",
+                                "MinValue": "0",
+                                "MaxValue": "5",
+                                "ScalingType": "Auto"
+                            },
+                            {
+                                "Name": "lambda",
+                                "MinValue": "0",
+                                "MaxValue": "5",
+                                "ScalingType": "Auto"
+                            }
+                        ],
+                        "CategoricalParameterRanges": [],
+                        "IntegerParameterRanges": [
+                            {
+                                "Name": "max_depth",
+                                "MinValue": "3",
+                                "MaxValue": "10",
+                                "ScalingType": "Auto"
+                            },
+                            {
+                                "Name": "min_child_weight",
+                                "MinValue": "1",
+                                "MaxValue": "10",
+                                "ScalingType": "Auto"
+                            }
+                        ]
+                    }
+                },
+                "TrainingJobDefinition": {
+                    "StaticHyperParameters": {
+                        "num_class": "3",
+                        "objective": "\"multi:softprob\"",
+                        "eval_metric": "[\"merror\", \"mlogloss\"]",
+                        "tree_method": "\"hist\"",
+                        "early_stopping_rounds": "20",
+                        "sagemaker_submit_directory": "\"s3://healthcare-pipeline-tf/healthcare-data/scripts/trainsourcedir.tar.gz\"",
+                        "sagemaker_program": "\"train.py\"",
+                        "sagemaker_container_log_level": "20",
+                        "sagemaker_job_name": "\"sagemaker-xgboost-2025-04-10-13-47-37-919\"",
+                        "sagemaker_region": "\"eu-north-1\"",
+                        "sagemaker_estimator_class_name": "\"XGBoost\"",
+                        "sagemaker_estimator_module": "\"sagemaker.xgboost.estimator\""
+                    },
+                    "RoleArn": "arn:aws:iam::861976376325:role/sagemaker-ml-execution-role-1-tf",
+                    "OutputDataConfig": {
+                        "S3OutputPath": "s3://healthcare-pipeline-tf/healthcare-data/model"
+                    },
+                    "StoppingCondition": {
+                        "MaxRuntimeInSeconds": 86400
+                    },
+                    "HyperParameterTuningResourceConfig": {
+                        "InstanceCount": 1,
+                        "InstanceType": "ml.m5.xlarge",
+                        "VolumeSizeInGB": 30
+                    },
+                    "AlgorithmSpecification": {
+                        "TrainingInputMode": "File",
+                        "MetricDefinitions": [
+                            {
+                                "Name": "validation:merror",
+                                "Regex": "(?:\\[(\\d+)\\]\\svalidation_0-merror:|final-validation_0-merror:)(\\d+\\.\\d+)"
+                            }
+                        ],
+                        "TrainingImage": "662702820516.dkr.ecr.eu-north-1.amazonaws.com/sagemaker-xgboost:1.7-1"
+                    },
+                    "InputDataConfig": [
+                        {
+                            "DataSource": {
+                                "S3DataSource": {
+                                    "S3DataType": "S3Prefix",
+                                    "S3Uri": {
+                                        "Get": "Steps.PreprocessData.ProcessingOutputConfig.Outputs['train'].S3Output.S3Uri"
+                                    },
+                                    "S3DataDistributionType": "FullyReplicated"
+                                }
+                            },
+                            "ContentType": "text/csv",
+                            "ChannelName": "train"
+                        },
+                        {
+                            "DataSource": {
+                                "S3DataSource": {
+                                    "S3DataType": "S3Prefix",
+                                    "S3Uri": {
+                                        "Get": "Steps.PreprocessData.ProcessingOutputConfig.Outputs['test'].S3Output.S3Uri"
+                                    },
+                                    "S3DataDistributionType": "FullyReplicated"
+                                }
+                            },
+                            "ContentType": "text/csv",
+                            "ChannelName": "validation"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "Name": "EvaluationStep",
+            "Type": "Processing",
+            "Arguments": {
+                "ProcessingResources": {
+                    "ClusterConfig": {
+                        "InstanceType": "ml.m5.xlarge",
+                        "InstanceCount": 1,
+                        "VolumeSizeInGB": 30
+                    }
+                },
+                "AppSpecification": {
+                    "ImageUri": "662702820516.dkr.ecr.eu-north-1.amazonaws.com/sagemaker-xgboost:1.7-1",
+                    "ContainerEntrypoint": [
+                        "python3",
+                        "/opt/ml/processing/input/code/evaluation.py"
+                    ]
+                },
+                "RoleArn": "arn:aws:iam::861976376325:role/sagemaker-ml-execution-role-1-tf",
+                "ProcessingInputs": [
+                    {
+                        "InputName": "input-1",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": {
+                                "Std:Join": {
+                                    "On": "/",
+                                    "Values": [
+                                        "s3:/",
+                                        "healthcare-pipeline-tf",
+                                        "healthcare-data/model",
+                                        {
+                                            "Get": "Steps.HyperparameterTuning.TrainingJobSummaries[0].TrainingJobName"
+                                        },
+                                        "output/model.tar.gz"
+                                    ]
+                                }
+                            },
+                            "LocalPath": "/opt/ml/processing/model",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    },
+                    {
+                        "InputName": "input-2",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": {
+                                "Get": "Steps.PreprocessData.ProcessingOutputConfig.Outputs['test'].S3Output.S3Uri"
+                            },
+                            "LocalPath": "/opt/ml/processing/test",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    },
+                    {
+                        "InputName": "code",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/scripts/evaluation.py",
+                            "LocalPath": "/opt/ml/processing/input/code",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    }
+                ],
+                "ProcessingOutputConfig": {
+                    "Outputs": [
+                        {
+                            "OutputName": "evaluation",
+                            "AppManaged": false,
+                            "S3Output": {
+                                "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/evaluation",
+                                "LocalPath": "/opt/ml/processing/evaluation",
+                                "S3UploadMode": "EndOfJob"
+                            }
+                        }
+                    ]
+                }
+            },
+            "PropertyFiles": [
+                {
+                    "PropertyFileName": "EvaluationReport",
+                    "OutputName": "evaluation",
+                    "FilePath": "evaluation.json"
+                }
+            ]
+        },
+        {
+            "Name": "CheckAccuracy",
+            "Type": "Condition",
+            "Arguments": {
+                "Conditions": [
+                    {
+                        "Type": "GreaterThanOrEqualTo",
+                        "LeftValue": {
+                            "Std:JsonGet": {
+                                "PropertyFile": {
+                                    "Get": "Steps.EvaluationStep.PropertyFiles.EvaluationReport"
+                                },
+                                "Path": "accuracy"
+                            }
+                        },
+                        "RightValue": {
+                            "Get": "Parameters.AccuracyThreshold"
+                        }
+                    }
+                ],
+                "IfSteps": [
+                    {
+                        "Name": "RegisterModel-RegisterModel",
+                        "Type": "RegisterModel",
+                        "Arguments": {
+                            "ModelPackageGroupName": "SeverityClassificationtflt",
+                            "InferenceSpecification": {
+                                "Containers": [
+                                    {
+                                        "Image": "662702820516.dkr.ecr.eu-north-1.amazonaws.com/sagemaker-xgboost:1.7-1",
+                                        "Environment": {},
+                                        "ModelDataUrl": {
+                                            "Std:Join": {
+                                                "On": "/",
+                                                "Values": [
+                                                    "s3:/",
+                                                    "healthcare-pipeline-tf",
+                                                    "healthcare-data/model",
+                                                    {
+                                                        "Get": "Steps.HyperparameterTuning.TrainingJobSummaries[0].TrainingJobName"
+                                                    },
+                                                    "output/model.tar.gz"
+                                                ]
+                                            }
+                                        }
+                                    }
+                                ],
+                                "SupportedContentTypes": [
+                                    "text/csv"
+                                ],
+                                "SupportedResponseMIMETypes": [
+                                    "text/csv"
+                                ],
+                                "SupportedRealtimeInferenceInstanceTypes": [
+                                    "ml.m5.xlarge"
+                                ]
+                            },
+                            "ModelApprovalStatus": "PendingManualApproval",
+                            "SkipModelValidation": "None"
+                        },
+                        "DependsOn": [
+                            "CreateModelPackageGroup"
+                        ]
+                    }
+                ],
+                "ElseSteps": []
+            }
+        },
+        {
+            "Name": "ApproveModel",
+            "Type": "Lambda",
+            "Arguments": {
+                "model_package_arn": {
+                    "Get": "Steps.RegisterModel-RegisterModel.ModelPackageArn"
+                }
+            },
+            "DependsOn": [
+                "RegisterModel-RegisterModel"
+            ],
+            "FunctionArn": "arn:aws:lambda:eu-north-1:861976376325:function:severity-classification-approval-lt",
+            "OutputParameters": []
+        },
+        {
+            "Name": "DeployModelEndpoint",
+            "Type": "Lambda",
+            "Arguments": {
+                "model_package_arn": {
+                    "Get": "Steps.RegisterModel-RegisterModel.ModelPackageArn"
+                },
+                "endpoint_name": "health-severity-endpoint-tf",
+                "role_arn": "arn:aws:iam::861976376325:role/sagemaker-ml-execution-role-1-tf",
+                "instance_type": "ml.m5.xlarge",
+                "initial_instance_count": 1,
+                "region": "eu-north-1"
+            },
+            "DependsOn": [
+                "ApproveModel"
+            ],
+            "FunctionArn": "arn:aws:lambda:eu-north-1:861976376325:function:healthcare-severity-classification-model-lt",
+            "OutputParameters": [
+                {
+                    "OutputName": "statusCode",
+                    "OutputType": "String"
+                },
+                {
+                    "OutputName": "body",
+                    "OutputType": "String"
+                }
+            ]
+        },
+        {
+            "Name": "EnableDataCapture",
+            "Type": "Lambda",
+            "Arguments": {
+                "endpoint_name": "health-severity-endpoint-tf",
+                "data_capture_config": "{\"EnableCapture\": true, \"InitialSamplingPercentage\": 100, \"DestinationS3Uri\": \"s3://healthcare-pipeline-tf/healthcare-data/monitoring/data-capture/\", \"CaptureOptions\": [{\"CaptureMode\": \"Input\"}, {\"CaptureMode\": \"Output\"}], \"CaptureContentTypeHeader\": {\"CsvContentTypes\": [\"text/csv\"], \"JsonContentTypes\": [\"application/json\"]}}"
+            },
+            "DependsOn": [
+                "DeployModelEndpoint"
+            ],
+            "FunctionArn": "arn:aws:lambda:eu-north-1:861976376325:function:healthcare-severity-classification-datacapture-lt",
+            "OutputParameters": []
+        },
+        {
+            "Name": "CheckMonitoringData",
+            "Type": "Lambda",
+            "Arguments": {
+                "s3_path": "s3://healthcare-pipeline-tf/healthcare-data/monitoring/data-capture/"
+            },
+            "DependsOn": [
+                "EnableDataCapture"
+            ],
+            "FunctionArn": "arn:aws:lambda:eu-north-1:861976376325:function:healthcare-severity-classification-checks3-lt",
+            "OutputParameters": [
+                {
+                    "OutputName": "DataAvailable",
+                    "OutputType": "Boolean"
+                }
+            ]
+        },
+        {
+            "Name": "MonitorModel",
+            "Type": "Processing",
+            "Arguments": {
+                "ProcessingResources": {
+                    "ClusterConfig": {
+                        "InstanceType": "ml.m5.xlarge",
+                        "InstanceCount": 1,
+                        "VolumeSizeInGB": 30
+                    }
+                },
+                "AppSpecification": {
+                    "ImageUri": "662702820516.dkr.ecr.eu-north-1.amazonaws.com/sagemaker-xgboost:1.7-1",
+                    "ContainerEntrypoint": [
+                        "python3",
+                        "/opt/ml/processing/input/code/monitoring.py"
+                    ]
+                },
+                "RoleArn": "arn:aws:iam::861976376325:role/sagemaker-ml-execution-role-1-tf",
+                "ProcessingInputs": [
+                    {
+                        "InputName": "input-1",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/monitoring/data-capture/health-severity-endpoint-tf/primary/",
+                            "LocalPath": "/opt/ml/processing/input",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    },
+                    {
+                        "InputName": "input-2",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/monitoring/baseline/",
+                            "LocalPath": "/opt/ml/processing/baseline",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    },
+                    {
+                        "InputName": "code",
+                        "AppManaged": false,
+                        "S3Input": {
+                            "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/scripts/monitoring.py",
+                            "LocalPath": "/opt/ml/processing/input/code",
+                            "S3DataType": "S3Prefix",
+                            "S3InputMode": "File",
+                            "S3DataDistributionType": "FullyReplicated",
+                            "S3CompressionType": "None"
+                        }
+                    }
+                ],
+                "ProcessingOutputConfig": {
+                    "Outputs": [
+                        {
+                            "OutputName": "output-1",
+                            "AppManaged": false,
+                            "S3Output": {
+                                "S3Uri": "s3://healthcare-pipeline-tf/healthcare-data/monitoring/reports/",
+                                "LocalPath": "/opt/ml/processing/output",
+                                "S3UploadMode": "EndOfJob"
+                            }
+                        }
+                    ]
+                },
+                "Environment": {
+                    "SM_LOG_LEVEL": "INFO"
+                }
+            },
+            "DependsOn": [
+                "DeployModelEndpoint",
+                "EnableDataCapture",
+                "CheckMonitoringData"
+            ]
+        },
+        {
+            "Name": "CreateModelPackageGroup",
+            "Type": "Lambda",
+            "Arguments": {
+                "model_package_group_name": "SeverityClassificationtflt"
+            },
+            "FunctionArn": "arn:aws:lambda:eu-north-1:861976376325:function:healthcare-severity-classification-modelgroup-lt",
+            "OutputParameters": []
+        }
+    ]
+}

@@ -1,0 +1,65 @@
+name: SageMaker Pipeline Automation
+
+env:
+  # SAGEMAKER_PIPELINE_NAME: SeverityClassificationPipelinelt
+  SAGEMAKER_PIPELINE_NAME: severity-classification-pipeline-tf
+  
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/scripts/**' 
+      
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read
+
+jobs:
+  run-sagemaker-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Debug GitHub Context
+        run: |
+          echo "Repo: ${{ github.repository }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Ref: ${{ github.ref }}"
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.ACCESS_TOKEN }}
+
+
+      - name: Set Up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.10'
+
+      - name: Install or Update AWS CLI
+        run: |
+          if ! command -v aws &> /dev/null; then
+            echo "AWS CLI not found, installing..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+          else
+            echo "AWS CLI already installed.."
+          fi
+          aws --version
+          pip install boto3 sagemaker pandas
+
+
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::861976376325:role/GithubSagemakerHealthcare1
+          role-session-name: samplerolesession
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Trigger SageMaker Pipeline
+        run: |
+          python trigger_pipeline.py
