@@ -56,7 +56,7 @@ jobs:
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
-          role-to-assume: arn:aws:iam::861976376325:role/GithubSagemakerHealthcare1
+          role-to-assume: arn:aws:iam::<aws-account-id>:role/GithubSagemakerHealthcare1
           role-session-name: samplerolesession
           aws-region: ${{ secrets.AWS_REGION }}
 
