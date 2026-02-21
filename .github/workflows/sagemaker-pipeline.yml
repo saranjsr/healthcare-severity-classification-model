@@ -1,15 +1,14 @@
 name: SageMaker Pipeline Automation
 
 env:
-  # SAGEMAKER_PIPELINE_NAME: SeverityClassificationPipelinelt
   SAGEMAKER_PIPELINE_NAME: severity-classification-pipeline-tf
   
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'terraform/scripts/**' 
+# on:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - 'terraform/scripts/**' 
       
 permissions:
   id-token: write # This is required for requesting the JWT
